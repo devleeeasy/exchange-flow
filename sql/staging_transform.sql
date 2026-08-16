@@ -5,7 +5,7 @@
 MERGE INTO STAGING.EXCHANGE_RATE_STG tgt
 USING (
     SELECT
-        TO_DATE(REGEXP_SUBSTR(file_name, '\d{8}'), 'YYYYMMDD') AS result_date,
+        TO_DATE(REGEXP_SUBSTR(file_name, '[0-9]{8}'), 'YYYYMMDD') AS result_date,
         raw_data:cur_unit::STRING AS cur_unit,
         raw_data:cur_nm::STRING AS cur_nm,
         REPLACE(raw_data:deal_bas_r::STRING, ',', '')::FLOAT AS rate,
@@ -13,7 +13,7 @@ USING (
     FROM RAW.EXCHANGE_RATE_RAW
     WHERE raw_data:result::STRING = '1'
     QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY REGEXP_SUBSTR(file_name, '\d{8}'), raw_data:cur_unit::STRING
+        PARTITION BY REGEXP_SUBSTR(file_name, '[0-9]{8}'), raw_data:cur_unit::STRING
         ORDER BY loaded_at DESC
     ) = 1
 ) src
