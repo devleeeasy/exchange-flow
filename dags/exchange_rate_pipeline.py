@@ -11,8 +11,8 @@ from datetime import timedelta
 import pendulum
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowSkipException
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
-from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 
 from extract import fetch_exchange_rates, save_to_local
 from load_to_snowflake import copy_into_raw, put_file_to_stage
@@ -62,15 +62,15 @@ def exchange_rate_pipeline():
         finally:
             conn.close()
 
-    transform_staging = SnowflakeOperator(
+    transform_staging = SQLExecuteQueryOperator(
         task_id="transform_staging",
-        snowflake_conn_id=SNOWFLAKE_CONN_ID,
+        conn_id=SNOWFLAKE_CONN_ID,
         sql="staging_transform.sql",
     )
 
-    transform_mart = SnowflakeOperator(
+    transform_mart = SQLExecuteQueryOperator(
         task_id="transform_mart",
-        snowflake_conn_id=SNOWFLAKE_CONN_ID,
+        conn_id=SNOWFLAKE_CONN_ID,
         sql="mart_transform.sql",
     )
 
