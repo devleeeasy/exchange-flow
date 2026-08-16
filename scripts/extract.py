@@ -9,7 +9,7 @@ from pathlib import Path
 
 import requests
 
-EXIM_API_URL = "https://www.koreaexim.go.kr/site/program/financial/exchangeJSON"
+EXIM_API_URL = "https://oapi.koreaexim.go.kr/site/program/financial/exchangeJSON"
 
 logger = logging.getLogger(__name__)
 
