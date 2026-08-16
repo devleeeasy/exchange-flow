@@ -1,0 +1,54 @@
+-- ExchangeFlow: 초기 스키마 설정
+-- Snowflake Worksheet에서 1회 실행 (ACCOUNTADMIN 또는 적절한 권한 role)
+
+CREATE WAREHOUSE IF NOT EXISTS EXCHANGEFLOW_WH
+    WAREHOUSE_SIZE = 'XSMALL'
+    AUTO_SUSPEND = 60
+    AUTO_RESUME = TRUE
+    INITIALLY_SUSPENDED = TRUE;
+
+CREATE DATABASE IF NOT EXISTS EXCHANGEFLOW;
+
+CREATE SCHEMA IF NOT EXISTS EXCHANGEFLOW.RAW;
+CREATE SCHEMA IF NOT EXISTS EXCHANGEFLOW.STAGING;
+CREATE SCHEMA IF NOT EXISTS EXCHANGEFLOW.MART;
+
+USE DATABASE EXCHANGEFLOW;
+USE WAREHOUSE EXCHANGEFLOW_WH;
+
+-- RAW: API 응답 JSON을 그대로 VARIANT로 적재
+-- STRIP_OUTER_ARRAY=TRUE 이므로 배열의 통화별 원소가 각각 한 행으로 들어온다
+CREATE FILE FORMAT IF NOT EXISTS RAW.JSON_FORMAT
+    TYPE = JSON
+    STRIP_OUTER_ARRAY = TRUE;
+
+CREATE STAGE IF NOT EXISTS RAW.RAW_STAGE
+    FILE_FORMAT = RAW.JSON_FORMAT;
+
+CREATE TABLE IF NOT EXISTS RAW.EXCHANGE_RATE_RAW (
+    raw_data   VARIANT,
+    file_name  STRING,
+    loaded_at  TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- STAGING: 타입 캐스팅 + (result_date, cur_unit) 기준 최신값만 유지
+CREATE TABLE IF NOT EXISTS STAGING.EXCHANGE_RATE_STG (
+    result_date DATE,
+    cur_unit    STRING,
+    cur_nm      STRING,
+    rate        FLOAT,
+    updated_at  TIMESTAMP_NTZ,
+    PRIMARY KEY (result_date, cur_unit)
+);
+
+-- MART: 전일 대비 변동률 + 5영업일 이동평균
+CREATE TABLE IF NOT EXISTS MART.EXCHANGE_RATE_DAILY (
+    result_date DATE,
+    cur_unit    STRING,
+    rate        FLOAT,
+    prev_rate   FLOAT,
+    change_pct  FLOAT,
+    ma_5        FLOAT,
+    updated_at  TIMESTAMP_NTZ,
+    PRIMARY KEY (result_date, cur_unit)
+);

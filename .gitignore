@@ -1,0 +1,24 @@
+# env / secrets
+.env
+*.pem
+*.p8
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# airflow runtime
+logs/*
+!logs/.gitkeep
+plugins/*
+!plugins/.gitkeep
+
+# collected data files
+data/*
+!data/.gitkeep
+
+# os / editor
+.DS_Store
+.vscode/
