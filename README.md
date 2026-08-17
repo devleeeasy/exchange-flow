@@ -6,17 +6,33 @@ Docker(Airflow) → Snowflake RAW(VARIANT) → STAGING(캐스팅) → MART(변�
 
 ## 아키텍처
 
-```
-extract (API 호출)
-    -> load_to_raw (Stage PUT + COPY INTO RAW.EXCHANGE_RATE_RAW, VARIANT)
-    -> transform_staging (MERGE, 타입 캐스팅)
-    -> transform_mart (MERGE, 전일 대비 변동률 + 5영업일 이동평균)
-    -> dq_check (건수/null/중복 체크)
+```mermaid
+flowchart TD
+    API["한국수출입은행<br/>Open API"] -->|JSON 응답| extract
+
+    subgraph Airflow["Docker Compose · Airflow (LocalExecutor)"]
+        extract["extract<br/>API 호출 → 로컬 JSON"] --> load_to_raw["load_to_raw<br/>Stage PUT + COPY INTO"]
+        load_to_raw --> transform_staging["transform_staging<br/>MERGE · 타입 캐스팅"]
+        transform_staging --> transform_mart["transform_mart<br/>MERGE · 변동률 + 5일 이동평균"]
+        transform_mart --> dq_check["dq_check<br/>건수 / NULL / 중복 검증"]
+    end
+
+    subgraph Snowflake["Snowflake"]
+        RAW[("RAW.EXCHANGE_RATE_RAW<br/>VARIANT")] --> STAGING[("STAGING.EXCHANGE_RATE_STG")] --> MART[("MART.EXCHANGE_RATE_DAILY")]
+    end
+
+    load_to_raw -.-> RAW
+    transform_staging -.-> STAGING
+    transform_mart -.-> MART
+    dq_check -.검증.-> MART
 ```
 
 스케줄: 평일 11:30 KST (`30 11 * * 1-5`, Asia/Seoul) — 한국수출입은행 API는
 영업일 오전 11시 전후 당일 고시환율을 갱신하며, 휴장일에는 빈 응답을 반환한다.
-이 경우 `extract` 태스크가 실패가 아닌 skip으로 처리된다.
+이 경우 `extract` 태스크가 실패가 아닌 skip으로 처리된다 (실행 로그로 확인됨).
+
+MERGE 기반 upsert(`(result_date, cur_unit)` 키)로 STAGING/MART를 적재하므로
+동일 날짜를 재실행하거나 backfill해도 중복 없이 안전하다.
 
 ## 사전 준비
 
@@ -55,6 +71,18 @@ Admin → Connections → `+` 로 아래 값 등록:
 
 등록 후 DAG `exchange_rate_pipeline`을 Unpause하고 Trigger로 수동 실행해 확인한다.
 
+### 실행 확인
+
+`extract → load_to_raw → transform_staging → transform_mart → dq_check` 전 구간을
+로컬 Docker Compose 환경에서 end-to-end로 실행해 검증했다.
+
+```
+[dq_check] DQ 통과 [2026-08-14] rows=23
+```
+
+휴장일(주말)에 스케줄 실행되면 `extract`가 API 빈 응답을 감지해 실패 없이 skip
+처리되는 것도 함께 확인했다.
+
 ### 스크립트 단독 테스트 (Airflow 없이)
 
 ```bash
@@ -77,6 +105,8 @@ exchangeflow/
 │   ├── create_tables.sql
 │   ├── staging_transform.sql
 │   └── mart_transform.sql
+├── docs/
+│   └── PLAN.md          # 개발 계획서 (설계 의도, 단계별 일정)
 ├── docker-compose.yml
 ├── requirements.txt
 ├── .env.example
