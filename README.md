@@ -98,7 +98,12 @@ python scripts/load_to_snowflake.py --file data/exchange_rate_20260814.json
 
 ## 대시보드
 
-MART.EXCHANGE_RATE_DAILY를 통화별 추이·이동평균·최신 환율로 시각화하는 Streamlit 대시보드.
+MART.EXCHANGE_RATE_DAILY를 조회하는 Streamlit 환율 모니터링 대시보드. 4개 탭으로 구성:
+
+- **개요** — KPI 카드, 추이 차트(정규화/5일 MA 오버레이), 기간 등락률 랭킹, 기간 요약 통계
+- **통화별 상세** — 교차환율 계산기, 이동평균 이격도·추세 신호, 일별 변동률 히트맵
+- **변동성 · 리스크** — 급변 알림(임계치 슬라이더), 연율화 변동성, 통화 간 상관관계
+- **데이터 & 파이프라인** — 운영 카드(적재 행수/누락 고시일), 적재 이력, 원본 데이터
 
 ```bash
 pip install -r requirements.txt
@@ -106,6 +111,9 @@ streamlit run dashboard/app.py
 ```
 
 `.env`의 `SNOWFLAKE_*` 값을 그대로 사용한다 (로컬 스크립트 단독 실행과 동일).
+`.streamlit/config.toml`로 테마(accent `#ff4b4b`)를 지정했다.
+
+한계: 누락 고시일은 공휴일 캘린더 없이 평일 기준으로만 계산한다.
 
 ## 폴더 구조
 
@@ -118,6 +126,8 @@ exchangeflow/
 │   └── load_to_snowflake.py
 ├── dashboard/
 │   └── app.py            # Streamlit 대시보드
+├── .streamlit/
+│   └── config.toml       # 대시보드 테마
 ├── sql/
 │   ├── create_tables.sql
 │   ├── staging_transform.sql
