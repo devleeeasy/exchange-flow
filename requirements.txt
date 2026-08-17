@@ -1,3 +1,5 @@
 requests>=2.31
-snowflake-connector-python>=3.11
+snowflake-connector-python[pandas]>=3.11
 python-dotenv>=1.0
+streamlit>=1.38
+plotly>=5.24

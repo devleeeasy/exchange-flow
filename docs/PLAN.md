@@ -57,7 +57,7 @@ Snowflake RAW → STAGING → MART 3단 스키마, 오케스트레이션은 Airf
 ## 확장 아이디어
 
 - 여러 통화 동시 비교, 변동률 임계치 초과 Slack 알림
-- Streamlit 대시보드
+- ~~Streamlit 대시보드~~ — 구현 완료 (`dashboard/app.py`)
 - CeleryExecutor + Worker 분산 실행
 - dbt로 STAGING/MART 변환 이관
 

@@ -22,3 +22,4 @@ data/*
 # os / editor
 .DS_Store
 .vscode/
+.claude/
