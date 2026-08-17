@@ -96,6 +96,17 @@ python scripts/extract.py --date 20260814
 python scripts/load_to_snowflake.py --file data/exchange_rate_20260814.json
 ```
 
+## 대시보드
+
+MART.EXCHANGE_RATE_DAILY를 통화별 추이·이동평균·최신 환율로 시각화하는 Streamlit 대시보드.
+
+```bash
+pip install -r requirements.txt
+streamlit run dashboard/app.py
+```
+
+`.env`의 `SNOWFLAKE_*` 값을 그대로 사용한다 (로컬 스크립트 단독 실행과 동일).
+
 ## 폴더 구조
 
 ```
@@ -105,6 +116,8 @@ exchangeflow/
 ├── scripts/
 │   ├── extract.py
 │   └── load_to_snowflake.py
+├── dashboard/
+│   └── app.py            # Streamlit 대시보드
 ├── sql/
 │   ├── create_tables.sql
 │   ├── staging_transform.sql
