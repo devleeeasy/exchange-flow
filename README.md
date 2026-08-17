@@ -1,8 +1,18 @@
 # ExchangeFlow
 
-매일 환율 데이터를 자동 수집·적재·변환하는 ELT 파이프라인
+매일 환율 데이터를 자동 수집·적재·변환하고 대시보드로 시각화하는 ELT 파이프라인
 
-Docker(Airflow) → Snowflake RAW(VARIANT) → STAGING(캐스팅) → MART(변동률·이동평균)
+Docker(Airflow) → Snowflake RAW(VARIANT) → STAGING(캐스팅) → MART(변동률·이동평균) → Streamlit 대시보드
+
+## 목차
+
+- [아키텍처](#아키텍처)
+- [사전 준비](#사전-준비)
+- [로컬 실행](#로컬-실행)
+- [대시보드](#대시보드)
+- [폴더 구조](#폴더-구조)
+- [기술 스택](#기술-스택)
+- [운영 배포](#운영-배포)
 
 ## 아키텍처
 
@@ -21,10 +31,13 @@ flowchart TD
         RAW[("RAW.EXCHANGE_RATE_RAW<br/>VARIANT")] --> STAGING[("STAGING.EXCHANGE_RATE_STG")] --> MART[("MART.EXCHANGE_RATE_DAILY")]
     end
 
+    Dashboard["dashboard/app.py<br/>Streamlit 대시보드"]
+
     load_to_raw -.-> RAW
     transform_staging -.-> STAGING
     transform_mart -.-> MART
     dq_check -.검증.-> MART
+    MART -.조회.-> Dashboard
 ```
 
 스케줄: 평일 11:30 KST (`30 11 * * 1-5`, Asia/Seoul) — 한국수출입은행 API는
@@ -142,7 +155,7 @@ exchangeflow/
 
 ## 기술 스택
 
-Docker Compose · Apache Airflow(LocalExecutor) · Snowflake · Python
+Docker Compose · Apache Airflow(LocalExecutor) · Snowflake · Python · Streamlit · Plotly · pandas
 
 ## 운영 배포
 
