@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: exchange_rate_daily
+    description: 통화별 일별 고시환율 + 전일 대비 변동률 + 5영업일 이동평균.
+    columns:
+      - name: result_date
+        tests: [not_null]
+      - name: cur_unit
+        tests: [not_null]
+      - name: rate
+        tests: [not_null]
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [result_date, cur_unit]

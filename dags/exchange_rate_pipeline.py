@@ -1,6 +1,6 @@
 """ExchangeFlow: 한국수출입은행 고시환율 일일 ELT 파이프라인.
 
-extract -> load_to_raw -> transform_staging -> transform_mart -> dq_check
+extract -> load_to_raw -> dbt_build(staging+mart 변환 및 데이터 품질 테스트)
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from datetime import timedelta
 import pendulum
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowSkipException
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from airflow.operators.bash import BashOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
 from extract import fetch_exchange_rates, save_to_local
@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 SNOWFLAKE_CONN_ID = "snowflake_default"
 DATA_DIR = "/opt/airflow/data"
+DBT_PROJECT_DIR = "/opt/airflow/dbt"
+DBT_BIN = "/opt/dbt_venv/bin/dbt"
 
 default_args = {
     "retries": 2,
@@ -36,7 +38,6 @@ default_args = {
     start_date=pendulum.datetime(2026, 8, 1, tz="Asia/Seoul"),
     catchup=False,
     default_args=default_args,
-    template_searchpath=["/opt/airflow/sql"],
     tags=["exchangeflow"],
 )
 def exchange_rate_pipeline():
@@ -62,43 +63,21 @@ def exchange_rate_pipeline():
         finally:
             conn.close()
 
-    transform_staging = SQLExecuteQueryOperator(
-        task_id="transform_staging",
-        conn_id=SNOWFLAKE_CONN_ID,
-        sql="staging_transform.sql",
+    # STAGING/MART 변환(dbt models) + 데이터 품질 테스트(dbt tests)를 한 번에 실행.
+    # dbt는 Airflow 파이썬 환경과 의존성 충돌을 피하기 위해 격리된 venv(/opt/dbt_venv)에
+    # 설치돼 있다 (Dockerfile 참고). 기존 transform_staging/transform_mart/dq_check
+    # 태스크를 이 하나의 태스크로 대체한다.
+    dbt_build = BashOperator(
+        task_id="dbt_build",
+        bash_command=(
+            f"{DBT_BIN} deps --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR} && "
+            f"{DBT_BIN} build --project-dir {DBT_PROJECT_DIR} --profiles-dir {DBT_PROJECT_DIR}"
+        ),
     )
-
-    transform_mart = SQLExecuteQueryOperator(
-        task_id="transform_mart",
-        conn_id=SNOWFLAKE_CONN_ID,
-        sql="mart_transform.sql",
-    )
-
-    @task
-    def dq_check(logical_date=None) -> None:
-        search_date = logical_date.in_timezone("Asia/Seoul").format("YYYY-MM-DD")
-        hook = SnowflakeHook(snowflake_conn_id=SNOWFLAKE_CONN_ID)
-
-        row_count, null_count, dup_count = hook.get_first(
-            f"""
-            SELECT
-                COUNT(*),
-                COUNT_IF(rate IS NULL OR cur_unit IS NULL),
-                COUNT(*) - COUNT(DISTINCT cur_unit)
-            FROM MART.EXCHANGE_RATE_DAILY
-            WHERE result_date = '{search_date}'
-            """
-        )
-
-        if row_count == 0 or null_count > 0 or dup_count > 0:
-            raise ValueError(
-                f"DQ 실패 [{search_date}] rows={row_count} nulls={null_count} dups={dup_count}"
-            )
-        logger.info("DQ 통과 [%s] rows=%s", search_date, row_count)
 
     extracted_file = extract()
     loaded = load_to_raw(extracted_file)
-    loaded >> transform_staging >> transform_mart >> dq_check()
+    loaded >> dbt_build
 
 
 exchange_rate_pipeline()

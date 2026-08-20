@@ -1,0 +1,22 @@
+name: exchangeflow
+version: "1.0.0"
+config-version: 2
+
+profile: exchangeflow
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  exchangeflow:
+    staging:
+      +schema: staging
+      +alias: exchange_rate_stg
+    mart:
+      +schema: mart
+      +alias: exchange_rate_daily
