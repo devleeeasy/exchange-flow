@@ -1,6 +1,10 @@
 x-airflow-common:
   &airflow-common
-  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.10.5-python3.11}
+  image: exchangeflow/airflow-dbt:latest
+  build:
+    context: .
+    args:
+      AIRFLOW_IMAGE_NAME: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.10.5-python3.11}
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -11,11 +15,18 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     PYTHONPATH: /opt/airflow/scripts
     EXIM_API_KEY: ${EXIM_API_KEY}
+    SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT}
+    SNOWFLAKE_USER: ${SNOWFLAKE_USER}
+    SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD}
+    SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE}
+    SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE}
+    SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE}
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-apache-airflow-providers-snowflake requests}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./scripts:/opt/airflow/scripts
     - ./sql:/opt/airflow/sql
+    - ./dbt:/opt/airflow/dbt
     - ./data:/opt/airflow/data
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins

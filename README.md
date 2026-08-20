@@ -2,13 +2,14 @@
 
 매일 환율 데이터를 자동 수집·적재·변환하고 대시보드로 시각화하는 ELT 파이프라인
 
-Docker(Airflow) → Snowflake RAW(VARIANT) → STAGING(캐스팅) → MART(변동률·이동평균) → Streamlit 대시보드
+Docker(Airflow) → Snowflake RAW(VARIANT) → dbt(STAGING 캐스팅 → MART 변동률·이동평균) → Streamlit 대시보드
 
 ## 목차
 
 - [아키텍처](#아키텍처)
 - [사전 준비](#사전-준비)
 - [로컬 실행](#로컬-실행)
+- [dbt](#dbt)
 - [대시보드](#대시보드)
 - [폴더 구조](#폴더-구조)
 - [기술 스택](#기술-스택)
@@ -22,21 +23,18 @@ flowchart TD
 
     subgraph Airflow["Docker Compose · Airflow (LocalExecutor)"]
         extract["extract<br/>API 호출 → 로컬 JSON"] --> load_to_raw["load_to_raw<br/>Stage PUT + COPY INTO"]
-        load_to_raw --> transform_staging["transform_staging<br/>MERGE · 타입 캐스팅"]
-        transform_staging --> transform_mart["transform_mart<br/>MERGE · 변동률 + 5일 이동평균"]
-        transform_mart --> dq_check["dq_check<br/>건수 / NULL / 중복 검증"]
+        load_to_raw --> dbt_build["dbt_build<br/>dbt build (models + tests, 격리 venv)"]
     end
 
     subgraph Snowflake["Snowflake"]
-        RAW[("RAW.EXCHANGE_RATE_RAW<br/>VARIANT")] --> STAGING[("STAGING.EXCHANGE_RATE_STG")] --> MART[("MART.EXCHANGE_RATE_DAILY")]
+        RAW[("RAW.EXCHANGE_RATE_RAW<br/>VARIANT")] --> STAGING[("STAGING.EXCHANGE_RATE_STG<br/>dbt: stg_exchange_rate")] --> MART[("MART.EXCHANGE_RATE_DAILY<br/>dbt: exchange_rate_daily")]
     end
 
     Dashboard["dashboard/app.py<br/>Streamlit 대시보드"]
 
     load_to_raw -.-> RAW
-    transform_staging -.-> STAGING
-    transform_mart -.-> MART
-    dq_check -.검증.-> MART
+    dbt_build -.MERGE + test.-> STAGING
+    dbt_build -.MERGE + test.-> MART
     MART -.조회.-> Dashboard
 ```
 
@@ -44,8 +42,8 @@ flowchart TD
 영업일 오전 11시 전후 당일 고시환율을 갱신하며, 휴장일에는 빈 응답을 반환한다.
 이 경우 `extract` 태스크가 실패가 아닌 skip으로 처리된다 (실행 로그로 확인됨).
 
-MERGE 기반 upsert(`(result_date, cur_unit)` 키)로 STAGING/MART를 적재하므로
-동일 날짜를 재실행하거나 backfill해도 중복 없이 안전하다.
+STAGING/MART는 dbt incremental 모델(merge 전략, `(result_date, cur_unit)` 키)로
+적재하므로 동일 날짜를 재실행하거나 backfill해도 중복 없이 안전하다.
 
 ## 사전 준비
 
@@ -86,11 +84,11 @@ Admin → Connections → `+` 로 아래 값 등록:
 
 ### 실행 확인
 
-`extract → load_to_raw → transform_staging → transform_mart → dq_check` 전 구간을
-로컬 Docker Compose 환경에서 end-to-end로 실행해 검증했다.
+`extract → load_to_raw → dbt_build`(dbt build: STAGING/MART 모델 + 데이터 품질
+테스트) 전 구간을 로컬 Docker Compose 환경에서 end-to-end로 실행해 검증했다.
 
 ```
-[dq_check] DQ 통과 [2026-08-14] rows=23
+Done. PASS=11 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=11
 ```
 
 `airflow dags backfill`로 2026-08-10 ~ 2026-08-14(영업일 5일)을 채워 넣어
@@ -107,6 +105,29 @@ pip install -r requirements.txt
 
 python scripts/extract.py --date 20260814
 python scripts/load_to_snowflake.py --file data/exchange_rate_20260814.json
+```
+
+## dbt
+
+STAGING/MART 변환은 `dbt/`에 있는 dbt 프로젝트가 담당한다 (구 `sql/staging_transform.sql`,
+`sql/mart_transform.sql`을 대체).
+
+- `models/staging/stg_exchange_rate.sql` — RAW → STAGING 타입 캐스팅 (incremental·merge)
+- `models/mart/exchange_rate_daily.sql` — STAGING → MART 변동률·5영업일 이동평균 (incremental·merge)
+- `not_null`/`unique_combination_of_columns`(dbt_utils) + `assert_mart_not_stale`(최신
+  고시일 4일 이상 미갱신 시 실패) 테스트로 기존 `dq_check` 태스크를 대체
+
+dbt-snowflake를 Airflow 파이썬 환경에 같이 설치하면 의존성 충돌 위험이 있어,
+`Dockerfile`에서 `/opt/dbt_venv`라는 격리된 venv에 따로 설치하고 Airflow는
+`BashOperator`로 그 venv의 `dbt` 바이너리만 호출한다.
+
+로컬에서 직접 실행하려면:
+
+```bash
+python -m venv .dbtvenv && .dbtvenv/Scripts/pip install -r dbt/requirements.txt
+# .env의 SNOWFLAKE_* 값을 셸 환경변수로 로드한 뒤
+.dbtvenv/Scripts/dbt deps --project-dir dbt --profiles-dir dbt
+.dbtvenv/Scripts/dbt build --project-dir dbt --profiles-dir dbt
 ```
 
 ## 대시보드
@@ -137,16 +158,23 @@ exchangeflow/
 ├── scripts/
 │   ├── extract.py
 │   └── load_to_snowflake.py
+├── dbt/                   # STAGING/MART 변환 (dbt 프로젝트)
+│   ├── models/
+│   │   ├── staging/       # stg_exchange_rate + 소스/테스트 정의
+│   │   └── mart/          # exchange_rate_daily + 테스트 정의
+│   ├── tests/             # 싱글턴 테스트 (assert_mart_not_stale)
+│   ├── macros/
+│   ├── dbt_project.yml
+│   └── profiles.yml       # SNOWFLAKE_* 환경변수 기반 (비밀값 없음)
 ├── dashboard/
 │   └── app.py            # Streamlit 대시보드
 ├── .streamlit/
 │   └── config.toml       # 대시보드 테마
 ├── sql/
-│   ├── create_tables.sql
-│   ├── staging_transform.sql
-│   └── mart_transform.sql
+│   └── create_tables.sql # RAW 스키마/스테이지만 생성 (STAGING/MART는 dbt가 관리)
 ├── docs/
 │   └── PLAN.md          # 개발 계획서 (설계 의도, 단계별 일정)
+├── Dockerfile             # Airflow 이미지 + dbt 격리 venv
 ├── docker-compose.yml
 ├── requirements.txt
 ├── .env.example
@@ -155,7 +183,7 @@ exchangeflow/
 
 ## 기술 스택
 
-Docker Compose · Apache Airflow(LocalExecutor) · Snowflake · Python · Streamlit · Plotly · pandas
+Docker Compose · Apache Airflow(LocalExecutor) · dbt · Snowflake · Python · Streamlit · Plotly · pandas
 
 ## 운영 배포
 

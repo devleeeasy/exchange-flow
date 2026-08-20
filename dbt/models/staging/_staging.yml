@@ -1,0 +1,24 @@
+version: 2
+
+sources:
+  - name: raw
+    database: EXCHANGEFLOW
+    schema: RAW
+    tables:
+      - name: exchange_rate_raw
+        identifier: EXCHANGE_RATE_RAW
+
+models:
+  - name: stg_exchange_rate
+    description: RAW.EXCHANGE_RATE_RAW를 타입 캐스팅한 통화별 일별 고시환율.
+    columns:
+      - name: result_date
+        tests: [not_null]
+      - name: cur_unit
+        tests: [not_null]
+      - name: rate
+        tests: [not_null]
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [result_date, cur_unit]

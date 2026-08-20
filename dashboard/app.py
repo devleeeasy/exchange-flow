@@ -142,7 +142,7 @@ def color_for(cur_unit: str, ordering: list[str]) -> str:
 def humanize_delta(ts) -> str:
     if ts is None or pd.isna(ts):
         return "알 수 없음"
-    secs = max((pd.Timestamp.now() - pd.Timestamp(ts)).total_seconds(), 0)
+    secs = max((pd.Timestamp.utcnow().tz_localize(None) - pd.Timestamp(ts)).total_seconds(), 0)
     if secs < 3600:
         return f"{int(secs // 60)}분 전"
     if secs < 86400:

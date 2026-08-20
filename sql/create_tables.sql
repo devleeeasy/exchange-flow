@@ -31,24 +31,6 @@ CREATE TABLE IF NOT EXISTS RAW.EXCHANGE_RATE_RAW (
     loaded_at  TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );
 
--- STAGING: 타입 캐스팅 + (result_date, cur_unit) 기준 최신값만 유지
-CREATE TABLE IF NOT EXISTS STAGING.EXCHANGE_RATE_STG (
-    result_date DATE,
-    cur_unit    STRING,
-    cur_nm      STRING,
-    rate        FLOAT,
-    updated_at  TIMESTAMP_NTZ,
-    PRIMARY KEY (result_date, cur_unit)
-);
-
--- MART: 전일 대비 변동률 + 5영업일 이동평균
-CREATE TABLE IF NOT EXISTS MART.EXCHANGE_RATE_DAILY (
-    result_date DATE,
-    cur_unit    STRING,
-    rate        FLOAT,
-    prev_rate   FLOAT,
-    change_pct  FLOAT,
-    ma_5        FLOAT,
-    updated_at  TIMESTAMP_NTZ,
-    PRIMARY KEY (result_date, cur_unit)
-);
+-- STAGING.EXCHANGE_RATE_STG / MART.EXCHANGE_RATE_DAILY 테이블은
+-- dbt(`dbt/`)가 첫 실행 시 모델 정의에 맞춰 직접 생성/관리한다 (incremental + merge).
+-- 여기서 별도로 CREATE TABLE 하지 않는다.
